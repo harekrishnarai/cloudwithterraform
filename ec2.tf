@@ -1,8 +1,3 @@
-provider "aws" {
-  region = "ap-south-1"
-  profile = "prisnelov"
-}
-
 resource "aws_security_group" "sshandhttp" {
   name        = "sshandhttp"
   description = "Allow HTTP inbound traffic"
@@ -38,8 +33,8 @@ resource "aws_security_group" "sshandhttp" {
 
 
 resource "aws_instance" "myin" {
-  ami           = "ami-0447a12f28fddb066"
-  instance_type = "t2.micro"
+  ami           = var.ami
+  instance_type = var.instance_type
   key_name = "keyfortest1"
   security_groups = ["sshandhttp"]
 
@@ -99,9 +94,9 @@ resource "null_resource" "nulllocal2"  {
 
 
 resource "aws_s3_bucket" "mybucket" {
-  bucket = "ehwehkbucket"
+  bucket = var.bucket_name
   acl    = "public-read"
-  region = "ap-south-1"
+  region = var.bucket_region
   tags = {
     Name = "harekrishnabuck"
   }
@@ -114,8 +109,8 @@ resource "aws_s3_bucket_object" "object"{
   depends_on = [aws_s3_bucket.mybucket,null_resource.image]
   bucket = aws_s3_bucket.mybucket.bucket     
   acl = "public-read"
-  key = "sample.png"
-  source = "C:/Users/harek/Desktop/terraform/sample.png"
+  key = var.object_key
+  source = var.object_source
   
 }
 
@@ -126,7 +121,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
   }
   
   enabled = true
-  default_root_object = "sample.png"
+  default_root_object = var.object_key
 
   default_cache_behavior {
     allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
@@ -161,7 +156,7 @@ resource "null_resource" "nullremote3" {
   connection {
     type = "ssh"
     user = "ec2-user"
-    private_key = file("C:/Users/harek/Downloads/keyfortest1.pem")
+    private_key = file(var.key_path)
     host = aws_instance.myin.public_ip
   }
   
