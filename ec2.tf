@@ -1,3 +1,9 @@
+# Default provider configurations
+provider "aws" {
+  region = "ap-east-1"
+  profile = "prisnelov"
+}
+
 resource "aws_security_group" "sshandhttp" {
   name        = "sshandhttp"
   description = "Allow HTTP inbound traffic"
@@ -19,6 +25,14 @@ resource "aws_security_group" "sshandhttp" {
     cidr_blocks = ["0.0.0.0/0"]
   }
   
+    ingress {
+    description = "EFS-storage"
+    from_port   = 2049
+    to_port     = 2049
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  
   egress {
     from_port = 0
     to_port   = 0
@@ -32,7 +46,7 @@ resource "aws_security_group" "sshandhttp" {
 }
 
 
-resource "aws_instance" "myin" {
+resource "aws_instance" "myinstance" {
   ami           = var.ami
   instance_type = var.instance_type
   key_name = "keyfortest1"
@@ -42,7 +56,7 @@ resource "aws_instance" "myin" {
     type     = "ssh"
     user     = "ec2-user"
     private_key = file("C:/Users/harek/Downloads/keyfortest1.pem")
-    host     = aws_instance.myin.public_ip
+    host     = aws_instance.myinstance.public_ip
   }
 
   provisioner "remote-exec" {
@@ -63,32 +77,34 @@ resource "null_resource" "image"{
   }
 }
 
-resource "aws_ebs_volume" "ebs1" {
-  availability_zone = aws_instance.myin.availability_zone
-  size = 1
-  tags = {
-    Name = "myebs1"
-  }
-}
+# Creating & Mounting EFS storage
 
-resource "aws_volume_attachment" "ebs_attachment" {
-  device_name = "/dev/sdh"
-  volume_id   = aws_ebs_volume.ebs1.id
-  instance_id = aws_instance.myin.id
-  force_detach = true
+resource "aws_efs_file_system" "efs1" {
+   depends_on = [aws_security_group.my_security1 , aws_instance.myinstance ,]
+   creation_token = "EFS-file"
+   tags = {
+     Name = "efs-storage"
+   }
+ }
+
+resource "aws_efs_mount_target" "EFS_mount" {
+  depends_on = [aws_efs_file_system.efs1,]
+  file_system_id  = aws_efs_file_system.efs1.id
+  subnet_id       = aws_instance.myinstance.subnet_id
+  security_groups = [aws_security_group.my_security1.id]
 }
 
 #Note: We need the IP of the instance to be available after launch, we can't use it before and remembering the fact
 #that terraform runs the code in non-sequential format
 
 output "my_instance_ip" {
-  value = aws_instance.myin.public_ip
+  value = aws_instance.myinstance.public_ip
 }
 #This IP used later
 
 resource "null_resource" "nulllocal2"  {
   provisioner "local-exec" {
-      command = "echo  ${aws_instance.myin.public_ip} > publicip.txt"
+      command = "echo  ${aws_instance.myinstance.public_ip} > publicip.txt"
     }
 }
 
@@ -135,7 +151,7 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
     }
     viewer_protocol_policy = "allow-all"
     min_ttl = 0
-    default_ttl = 3600
+    default_ttl = 10
     max_ttl = 86400
   }
   
@@ -152,18 +168,17 @@ resource "aws_cloudfront_distribution" "s3_distribution" {
 }
 
 resource "null_resource" "nullremote3" {
-  depends_on = [aws_volume_attachment.ebs_attachment,aws_instance.myin]
+  depends_on = [aws_volume_attachment.ebs_attachment,aws_instance.myinstance]
   connection {
     type = "ssh"
     user = "ec2-user"
     private_key = file(var.key_path)
-    host = aws_instance.myin.public_ip
+    host = aws_instance.myinstance.public_ip
   }
   
   provisioner "remote-exec" {
     inline = [
-      "sudo mkfs.ext4  /dev/xvdh",
-      "sudo mount  /dev/xvdh  /var/www/html",
+      "sudo mount -t efs -o tls '${aws_efs_file_system.efs1.dns_name}':/ /var/www/html",
       "sudo rm -rf /var/www/html/*",
       "sudo git clone https://github.com/harekrishnarai/cloudwithterraform.git /var/www/html/",
       "sudo su << EOF",
@@ -180,6 +195,6 @@ resource "null_resource" "nulllocal1"  {
   ]
 
   provisioner "local-exec" {
-    command = "start chrome  ${aws_instance.myin.public_ip}"
+    command = "start chrome  ${aws_instance.myinstance.public_ip}"
   }
 }
