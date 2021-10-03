@@ -1,5 +1,5 @@
 # Default provider configurations
-provider "aws" {
-  region = "ap-south-1"
-  profile = "prisnelov"
+provider "google" {
+  project = "acme-app"
+  region  = "us-central1"
 }
